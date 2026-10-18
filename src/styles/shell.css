@@ -145,7 +145,7 @@
   padding-left: 4px;
 }
 
-.sidebar__close {
+.sidebar > .sidebar__close {
   display: none;
   position: absolute;
   top: 10px;
@@ -180,7 +180,7 @@
   -webkit-backdrop-filter: blur(14px);
 }
 
-.topbar__menu {
+.topbar > .topbar__menu {
   display: none;
 }
 
