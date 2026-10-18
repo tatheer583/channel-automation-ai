@@ -119,6 +119,27 @@ export interface ChannelUrlInfo {
   source: string
 }
 
+/**
+ * Extract a YouTube video id from common URL shapes
+ * (watch?v=, youtu.be/, shorts/, embed/). Returns null otherwise.
+ */
+export function parseYouTubeVideoId(input: string): string | null {
+  const text = input.trim()
+  if (!text) return null
+  if (/^[\w-]{11}$/.test(text)) return text
+  const patterns: RegExp[] = [
+    /^https?:\/\/(www\.)?youtube\.com\/watch\?(.*&)?v=([\w-]{11})/i,
+    /^https?:\/\/(www\.)?youtu\.be\/([\w-]{11})/i,
+    /^https?:\/\/(www\.)?youtube\.com\/shorts\/([\w-]{11})/i,
+    /^https?:\/\/(www\.)?youtube\.com\/embed\/([\w-]{11})/i,
+  ]
+  for (const pattern of patterns) {
+    const match = pattern.exec(text)
+    if (match) return match[match.length - 1]
+  }
+  return null
+}
+
 export interface ChannelUrlResult {
   error: string | null
   info: ChannelUrlInfo | null

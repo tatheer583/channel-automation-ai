@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CircleAlert,
   Clapperboard,
+  Download,
   Film,
   Info,
   Scissors,
@@ -24,6 +25,7 @@ const KIND_ICON: Record<ActivityKind, typeof Info> = {
   clip: Scissors,
   schedule: CalendarDays,
   captions: Captions,
+  export: Download,
   settings: Settings,
   system: Info,
 }

@@ -25,6 +25,17 @@ export interface VideoAsset {
   /** True for seeded sample metadata that has no local file attached. */
   sample: boolean
   addedAt: number
+  /** Small JPEG dataURL captured from the local file (persisted, ~10–30 KB). */
+  thumb?: string
+}
+
+export interface CaptionLine {
+  id: string
+  /** seconds */
+  start: number
+  /** seconds */
+  end: number
+  text: string
 }
 
 export interface ClipJob {
@@ -41,6 +52,8 @@ export interface ClipJob {
   statusSince: number
   createdAt: number
   updatedAt: number
+  /** Hand-authored caption lines for the clip (for SRT/VTT export + preview). */
+  captionLines?: CaptionLine[]
 }
 
 export interface ScheduleEntry {
@@ -73,11 +86,36 @@ export interface FormatOptions {
   fps: FpsId
 }
 
+export interface TextTemplate {
+  id: string
+  label: string
+  title: string
+  description: string
+  hashtags: string
+}
+
 export interface Prefs {
   accent: AccentId
   density: DensityId
   motionReduced: boolean
   defaultAspect: AspectId
+  reminders: boolean
+}
+
+/**
+ * A cross-platform performance snapshot the user records themselves.
+ * Views/likes/comments are entered manually — nothing is scraped.
+ */
+export interface TrackStat {
+  id: string
+  clipId: string
+  /** e.g. "TikTok", "YouTube Shorts" — free text label. */
+  label: string
+  views: number
+  likes: number
+  comments: number
+  /** Local date key YYYY-MM-DD. */
+  date: string
 }
 
 export type ActivityKind =
@@ -87,6 +125,7 @@ export type ActivityKind =
   | 'schedule'
   | 'captions'
   | 'settings'
+  | 'export'
   | 'system'
 
 export interface ActivityEvent {
@@ -94,6 +133,17 @@ export interface ActivityEvent {
   kind: ActivityKind
   message: string
   at: number
+}
+
+/** Metadata for a clip rendered in-browser this session (blob lives in memory). */
+export interface ExportEntry {
+  id: string
+  clipId: string
+  name: string
+  size: number
+  mime: string
+  aspect: AspectId
+  createdAt: number
 }
 
 export type ToastKind = 'success' | 'error' | 'info'
@@ -105,6 +155,31 @@ export interface ToastItem {
   detail?: string
 }
 
+/** Connected Google/YouTube channel info (no secrets persisted — token is ephemeral). */
+export interface YtChannelInfo {
+  id: string
+  title: string
+  customUrl: string
+  thumb: string
+}
+
+/**
+ * A recurring posting rule. Rules ring a local reminder while the app is
+ * open; the actual upload publishes as private with a YouTube-side publishAt
+ * so the video goes live at the exact time regardless of the tab.
+ */
+export interface AutoPostRule {
+  id: string
+  /** Label e.g. "Daily morning reel". */
+  name: string
+  /** Local time HH:MM. */
+  time: string
+  enabled: boolean
+  createdAt: number
+  /** epoch ms of the last triggered reminder (persisted). */
+  lastFiredAt: number | null
+}
+
 export interface AppState {
   channels: Channel[]
   videos: VideoAsset[]
@@ -114,4 +189,11 @@ export interface AppState {
   format: FormatOptions
   prefs: Prefs
   activity: ActivityEvent[]
+  textTemplates: TextTemplate[]
+  /** Google OAuth client id the USER supplies (never hard-coded). Empty = not configured. */
+  ytClientId: string
+  /** Persisted, non-secret info about the currently connected channel. */
+  ytChannel: YtChannelInfo | null
+  rules: AutoPostRule[]
+  stats: TrackStat[]
 }

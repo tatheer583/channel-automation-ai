@@ -7,17 +7,22 @@
  */
 
 import type {
+  ActivityEvent,
   AppState,
+  AutoPostRule,
   CaptionStyle,
   Channel,
   ClipJob,
   FormatOptions,
   Prefs,
   ScheduleEntry,
+  TextTemplate,
+  TrackStat,
   VideoAsset,
-  ActivityEvent,
+  YtChannelInfo,
 } from '../types'
 import { dateKey, uid } from './format'
+import { DEFAULT_TEXT_TEMPLATES } from './templates'
 
 const STORAGE_KEY = 'channel-ai:v1'
 const MAX_ACTIVITY_ITEMS = 60
@@ -43,6 +48,7 @@ export const DEFAULT_PREFS: Prefs = {
   density: 'cozy',
   motionReduced: false,
   defaultAspect: '9:16',
+  reminders: false,
 }
 
 const MINUTE = 60_000
@@ -128,6 +134,17 @@ export function seedAppState(): AppState {
       createdAt: now - 1 * DAY,
     },
   ]
+  const stats: TrackStat[] = [
+    {
+      id: uid(),
+      clipId: clip1.id,
+      label: 'YouTube Shorts',
+      views: 12_400,
+      likes: 862,
+      comments: 47,
+      date: dateKey(new Date(now - 2 * DAY)),
+    },
+  ]
   const activity: ActivityEvent[] = [
     { id: uid(), kind: 'clip', message: `Clip "${clip1.title}" completed (simulated processing)`, at: now - 2 * DAY + 2 * MINUTE },
     { id: uid(), kind: 'schedule', message: 'Two demo posts scheduled on the content calendar', at: now - 1 * DAY },
@@ -144,6 +161,11 @@ export function seedAppState(): AppState {
     format: { ...DEFAULT_FORMAT },
     prefs: { ...DEFAULT_PREFS },
     activity,
+    textTemplates: DEFAULT_TEXT_TEMPLATES.map((t) => ({ ...t })),
+    ytClientId: '',
+    ytChannel: null,
+    rules: [],
+    stats,
   }
 }
 
@@ -156,6 +178,11 @@ interface LoadedShape {
   format?: unknown
   prefs?: unknown
   activity?: unknown
+  textTemplates?: unknown
+  ytClientId?: unknown
+  ytChannel?: unknown
+  rules?: unknown
+  stats?: unknown
 }
 
 function asArray(input: unknown): unknown[] {
@@ -224,12 +251,46 @@ export function sanitizeState(input: unknown): AppState | null {
     density: prefsRaw.density === 'compact' ? 'compact' : prefsRaw.density === 'cozy' ? 'cozy' : DEFAULT_PREFS.density,
     motionReduced: typeof prefsRaw.motionReduced === 'boolean' ? prefsRaw.motionReduced : DEFAULT_PREFS.motionReduced,
     defaultAspect: typeof prefsRaw.defaultAspect === 'string' ? (prefsRaw.defaultAspect as Prefs['defaultAspect']) : DEFAULT_PREFS.defaultAspect,
+    reminders: typeof prefsRaw.reminders === 'boolean' ? prefsRaw.reminders : DEFAULT_PREFS.reminders,
   }
+  const textTemplates = asArray(raw.textTemplates).filter(
+    (t): t is TextTemplate =>
+      t != null &&
+      typeof t === 'object' &&
+      typeof (t as TextTemplate).label === 'string' &&
+      typeof (t as TextTemplate).title === 'string',
+  )
+  const ytChannelRaw = asObject(raw.ytChannel)
+  const ytChannel: YtChannelInfo | null =
+    typeof ytChannelRaw.id === 'string' && typeof ytChannelRaw.title === 'string'
+      ? {
+          id: ytChannelRaw.id,
+          title: ytChannelRaw.title,
+          customUrl: typeof ytChannelRaw.customUrl === 'string' ? ytChannelRaw.customUrl : ytChannelRaw.id,
+          thumb: typeof ytChannelRaw.thumb === 'string' ? ytChannelRaw.thumb : '',
+        }
+      : null
+  const rules = asArray(raw.rules).filter(
+    (r): r is AutoPostRule =>
+      r != null &&
+      typeof r === 'object' &&
+      typeof (r as AutoPostRule).name === 'string' &&
+      /^\d{2}:\d{2}$/.test(String((r as AutoPostRule).time ?? '')),
+  )
   // Drop clips/schedule rows whose references vanished during editing elsewhere.
   const videoIds = new Set(videos.map((v) => v.id))
   const clipIds = new Set(clips.map((c) => c.id))
   const cleanClips = clips.filter((c) => videoIds.has(c.videoId))
   const cleanSchedule = schedule.filter((s) => clipIds.has(s.clipId))
+  // Performance entries only make sense for clips that still exist.
+  const stats = asArray(raw.stats).filter(
+    (s): s is TrackStat =>
+      s != null &&
+      typeof s === 'object' &&
+      typeof (s as TrackStat).clipId === 'string' &&
+      clipIds.has((s as TrackStat).clipId) &&
+      typeof (s as TrackStat).views === 'number',
+  )
   return {
     channels: channels.length > 0 ? channels : seed.channels,
     videos: videos.length > 0 ? videos : seed.videos,
@@ -239,6 +300,11 @@ export function sanitizeState(input: unknown): AppState | null {
     format,
     prefs,
     activity: activity.length > 0 ? activity.slice(0, MAX_ACTIVITY_ITEMS) : seed.activity,
+    textTemplates: textTemplates.length > 0 ? textTemplates : seed.textTemplates,
+    ytClientId: typeof raw.ytClientId === 'string' ? raw.ytClientId : '',
+    ytChannel,
+    rules,
+    stats,
   }
 }
 
