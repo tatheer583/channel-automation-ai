@@ -1,0 +1,5 @@
+# Local virtual environment (never commit it)
+.venv/
+__pycache__/
+*.pyc
+*.pyo

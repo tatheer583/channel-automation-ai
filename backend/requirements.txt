@@ -1,0 +1,12 @@
+# ChannelAI local service - Python dependencies
+#
+# Install into the project venv with:
+#   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+#
+# NOTE: faster-whisper uses CTranslate2 (CPU, int8). It does NOT need
+# PyTorch, which would add ~2.5 GB and is not required for CPU inference.
+
+fastapi==0.149.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+faster-whisper==1.2.1
