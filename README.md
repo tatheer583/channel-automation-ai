@@ -68,12 +68,40 @@ else end-to-end.
   step-by-step guide included, zero secrets in this repo), data export/import/reset.
 - **Performance tracker** — manually logged views/likes/comments per platform,
   stored locally, exportable as CSV (nothing is scraped).
+- **Local AI service** (optional, `backend/`) — **real** speech-to-text on your
+  own CPU: FFmpeg-style audio decoding + a Whisper model, with word-level
+  timings turned into subtitle-sized caption lines. See
+  [`docs/STAGE_A.md`](docs/STAGE_A.md).
 
 ### Tagged honestly
 
 The processing queue and demo analytics are **simulations with fixed timers**,
 labelled everywhere. Streaming marketing-speak stays out: features either run for
 real, or are explicitly named as demo.
+
+---
+
+## Local AI service (optional, free, offline)
+
+The browser alone cannot run a good speech-recognition model, so ChannelAI can
+talk to a **small local service** you start on your own machine:
+
+```powershell
+cd C:\Users\1\Projects\ChannelAI
+py -3.11 -m venv backend\.venv
+.\backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+.\backend\start.ps1
+```
+
+Then in the app: **Settings → Local AI service → Test connection**, and use
+**Transcribe** in the Video Library. Everything else in the app works with or
+without it — if the service is off, the app says so instead of pretending.
+
+- **No cloud, no credits, no API keys.** Your media never leaves your machine.
+- `faster-whisper` (int8, CPU) — no PyTorch, ~300 MB of dependencies.
+- Measured on an i5-8350U (4 cores, no GPU): `base` ≈ 2.8× realtime,
+  `tiny` ≈ 5.3× realtime.
+- Full setup, troubleshooting and limits: [`docs/STAGE_A.md`](docs/STAGE_A.md).
 
 ---
 

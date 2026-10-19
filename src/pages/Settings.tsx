@@ -430,7 +430,7 @@ export default function SettingsPage() {
             <li>
               <Save size={15} aria-hidden="true" />
               <span>
-                <strong>Version v0.2.0</strong> — MIT open-source · React + Vite · relative build paths for
+                <strong>Version v0.4.0</strong> — MIT open-source · React + Vite · relative build paths for
                 repository-based GitHub Pages.
               </span>
             </li>
@@ -438,7 +438,8 @@ export default function SettingsPage() {
               <HardDrive size={15} aria-hidden="true" />
               <span>
                 <strong>Real features:</strong> in-browser clip rendering/export, thumbnail capture, SRT/VTT
-                captions, scheduled YouTube publishing (your OAuth client), browser reminders.
+                captions, scheduled YouTube publishing (your OAuth client), browser reminders, and — with the
+                optional local service — <strong>real speech-to-text</strong> on your own CPU.
               </span>
             </li>
             <li>
