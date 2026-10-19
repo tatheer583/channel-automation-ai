@@ -703,7 +703,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         const url = getAttachedUrl(clip.videoId)
         if (!url) {
-          toast('error', 'Source file not attached', `Attach "${clip.videoId}" file in the Video Library first.`)
+          const videoName = stateRef.current.videos.find((v) => v.id === clip.videoId)?.name ?? 'The video'
+          toast('error', 'Source file not attached', `Re-attach "${videoName}" in the Video Library first.`)
           return
         }
         if (renderState != null) {

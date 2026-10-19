@@ -1,4 +1,5 @@
-import { Captions, LayoutTemplate, WandSparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Captions, LayoutTemplate, Plus, Save, Trash2, WandSparkles } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import {
   ASPECTS,
@@ -6,8 +7,10 @@ import {
   FPS_OPTIONS,
   RESOLUTIONS,
 } from '../lib/options'
-import { Badge, Card, DemoNote, Field, PageHeader, Segmented, Toggle, cx } from '../components/ui'
-import type { CaptionPosition } from '../types'
+import { Badge, Button, Card, DemoNote, Field, PageHeader, Segmented, Toggle, cx } from '../components/ui'
+import { uid } from '../lib/format'
+import { substitute } from '../lib/templates'
+import type { CaptionPosition, TextTemplate } from '../types'
 
 export default function CaptionsPage() {
   const { state, setCaptions, setFormat, toast } = useApp()
@@ -158,7 +161,7 @@ export default function CaptionsPage() {
 
           <Card
             title="Video format options"
-            subtitle="Stored as the default export profile for future integrations"
+            subtitle="Default profile used by the real in-browser render"
             icon={<LayoutTemplate size={17} aria-hidden="true" />}
           >
             <div className="field-row">
@@ -195,11 +198,145 @@ export default function CaptionsPage() {
                 />
               </Field>
             </div>
-            <DemoNote>Format settings describe what a real export would use later; nothing renders here.</DemoNote>
+            <DemoNote>The aspect drives Clip Studio's crop; resolution/fps remain the export profile.</DemoNote>
           </Card>
         </div>
       </div>
+
+      <TemplatesCard />
     </div>
+  )
+}
+
+// ------------------------------------------------------- template editor ---
+
+const SAMPLE_VARS: Record<string, string> = {
+  clip: 'Cold Open · Part 1',
+  video: 'Studio Session — Episode 04.mp4',
+  videoTag: 'studiosession',
+  range: '0:00–0:30',
+  aspect: '9:16',
+  date: '2026-10-19',
+  time: '09:00',
+}
+
+function TemplatesCard() {
+  const { state, setTemplates, toast } = useApp()
+  const [drafts, setDrafts] = useState<TextTemplate[]>(() => state.textTemplates.map((t) => ({ ...t })))
+
+  // Re-sync drafts after import/reset/reset-data replaces the templates array.
+  useEffect(() => {
+    setDrafts(state.textTemplates.map((t) => ({ ...t })))
+  }, [state.textTemplates])
+
+  const update = (id: string, patch: Partial<TextTemplate>) => {
+    setDrafts((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+  }
+
+  const save = () => {
+    const invalid = drafts.find((t) => !t.label.trim() || !t.title.trim())
+    if (invalid) {
+      toast('error', 'Template incomplete', 'Every template needs a label and a title line.')
+      return
+    }
+    setTemplates(
+      drafts.map((t) => ({ ...t, label: t.label.trim(), title: t.title.trim() })),
+      'Text templates saved',
+    )
+    toast('success', 'Templates saved', 'Clip Studio will prefill these when publishing.')
+  }
+
+  return (
+    <Card
+      title="Title / description / hashtag templates"
+      subtitle="Variables: {{clip}} {{video}} {{videoTag}} {{range}} {{aspect}} {{date}} {{time}} — applied from Clip Studio"
+      icon={<LayoutTemplate size={17} aria-hidden="true" />}
+      actions={
+        <div className="card__actions-inline">
+          <Button
+            size="sm"
+            onClick={() =>
+              setDrafts((list) => [
+                ...list,
+                { id: uid(), label: 'New template', title: '{{clip}}', description: 'From {{video}} · {{range}}\n\n#shorts', hashtags: '#shorts #reels' },
+              ])
+            }
+          >
+            <Plus size={14} aria-hidden="true" />
+            Add template
+          </Button>
+          <Button size="sm" variant="primary" onClick={save}>
+            <Save size={14} aria-hidden="true" />
+            Save templates
+          </Button>
+        </div>
+      }
+    >
+      {drafts.length === 0 && (
+        <p className="muted">No templates yet — add one to prefill YouTube metadata automatically.</p>
+      )}
+      <ul className="template-list">
+        {drafts.map((template) => (
+          <li key={template.id} className="template-row">
+            <div className="template-row__head">
+              <input
+                className="input template-row__label"
+                value={template.label}
+                aria-label="Template label"
+                maxLength={40}
+                onChange={(e) => update(template.id, { label: e.target.value })}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="btn--danger-ghost"
+                aria-label={`Delete template ${template.label}`}
+                onClick={() => {
+                  setDrafts((list) => list.filter((t) => t.id !== template.id))
+                  toast('info', 'Template removed from draft', 'Save to keep this change.')
+                }}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+              </Button>
+            </div>
+            <Field label="Title" htmlFor={`tt-${template.id}-title`}>
+              <input
+                id={`tt-${template.id}-title`}
+                className="input"
+                value={template.title}
+                maxLength={100}
+                onChange={(e) => update(template.id, { title: e.target.value })}
+              />
+            </Field>
+            <Field label="Description" htmlFor={`tt-${template.id}-desc`}>
+              <textarea
+                id={`tt-${template.id}-desc`}
+                className="input input--area"
+                rows={3}
+                value={template.description}
+                maxLength={1200}
+                onChange={(e) => update(template.id, { description: e.target.value })}
+              />
+            </Field>
+            <Field label="Hashtags" htmlFor={`tt-${template.id}-tags`}>
+              <input
+                id={`tt-${template.id}-tags`}
+                className="input"
+                value={template.hashtags}
+                onChange={(e) => update(template.id, { hashtags: e.target.value })}
+              />
+            </Field>
+            <p className="template-row__preview muted num" aria-label="Sample substitution preview">
+              ▸ {substitute(template.title, SAMPLE_VARS)} — {substitute(template.hashtags, SAMPLE_VARS)}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <DemoNote>
+        Everything here is plain text — substitution runs locally with no AI service. Edits stay drafts until
+        you press Save templates.
+      </DemoNote>
+    </Card>
   )
 }
 

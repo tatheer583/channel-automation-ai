@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CirclePlay, Clock, Film, FolderOpen, Trash2, Upload } from 'lucide-react'
+import { Camera, CirclePlay, Clock, Film, FolderOpen, ImageDown, Trash2, Upload } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Badge, Button, Card, DemoNote, EmptyState, Modal, PageHeader } from '../components/ui'
 import { formatBytes, formatClock, relativeTime } from '../lib/format'
@@ -13,10 +13,11 @@ function thumbUrl(video: VideoAsset): string | null {
 }
 
 export default function LibraryPage() {
-  const { state, addVideoFile, attachFileToVideo, removeVideo, toast } = useApp()
+  const { state, addVideoFile, attachFileToVideo, removeVideo, toast, captureThumb, downloadFrame } = useApp()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attachInputRef = useRef<HTMLInputElement>(null)
   const attachTargetRef = useRef<string | null>(null)
+  const previewVideoRef = useRef<HTMLVideoElement>(null)
   const [dragging, setDragging] = useState<HoverState>(false)
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
@@ -153,6 +154,13 @@ export default function LibraryPage() {
                             <CirclePlay size={30} />
                           </span>
                         </button>
+                      ) : video.thumb ? (
+                        <span className="vthumb__img-wrap">
+                          <img className="vthumb__img" src={video.thumb} alt={`Saved thumbnail for ${video.name}`} />
+                          <span className="vthumb__play vthumb__play--dim" aria-hidden="true">
+                            <Camera size={22} />
+                          </span>
+                        </span>
                       ) : (
                         <div className="vthumb__empty" aria-hidden="true" />
                       )}
@@ -225,11 +233,44 @@ export default function LibraryPage() {
         open={previewing != null}
         title={previewing ? `Preview — ${previewing.name}` : ''}
         onClose={() => setPreviewId(null)}
-        footer={<DemoNote>Playback happens in your browser against your local file. Nothing is uploaded or processed.</DemoNote>}
+        footer={
+          previewing ? (
+            <div className="modal-actions">
+              <Button
+                onClick={() => {
+                  void captureThumb(previewing.id, previewVideoRef.current?.currentTime ?? 0)
+                }}
+              >
+                <Camera size={15} aria-hidden="true" />
+                Set as thumbnail
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!previewing) return
+                  void downloadFrame(
+                    previewing.id,
+                    previewVideoRef.current?.currentTime ?? 0,
+                    `${previewing.name.replace(/\.[^.]+$/, '')} — frame`,
+                  )
+                }}
+              >
+                <ImageDown size={15} aria-hidden="true" />
+                Save frame PNG
+              </Button>
+              <DemoNote>Frame capture writes only inside your browser — the stored thumbnail persists locally.</DemoNote>
+            </div>
+          ) : undefined
+        }
       >
         {previewing &&
           (previewUrl ? (
-            <video src={previewUrl} controls playsInline className="preview-player" />
+            <video
+              ref={previewVideoRef}
+              src={previewUrl}
+              controls
+              playsInline
+              className="preview-player"
+            />
           ) : (
             <EmptyState
               icon={<Film size={26} aria-hidden="true" />}

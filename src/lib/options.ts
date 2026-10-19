@@ -94,6 +94,21 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
   },
 ]
 
+export const YT_CATEGORIES: { id: string; label: string }[] = [
+  { id: '22', label: 'People & Blogs' },
+  { id: '24', label: 'Entertainment' },
+  { id: '25', label: 'News & Politics' },
+  { id: '28', label: 'Science & Technology' },
+  { id: '27', label: 'Education' },
+  { id: '26', label: 'Howto & Style' },
+  { id: '17', label: 'Sports' },
+  { id: '10', label: 'Music' },
+  { id: '20', label: 'Gaming' },
+  { id: '2', label: 'Autos & Vehicles' },
+  { id: '1', label: 'Film & Animation' },
+  { id: '23', label: 'Comedy' },
+]
+
 export const ACCENTS: { id: 'violet' | 'blue' | 'teal'; label: string; color: string }[] = [
   { id: 'violet', label: 'Violet', color: '#8b7bff' },
   { id: 'blue', label: 'Blue', color: '#57a0ff' },

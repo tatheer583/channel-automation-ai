@@ -110,7 +110,7 @@ function SidebarContent({ route, onNavigate }: { route: Route; onNavigate?: () =
           <HardDrive size={14} aria-hidden="true" />
           <span>Local demo · data stays in this browser</span>
         </div>
-        <span className="sidebar__version">ChannelAI v0.1.0</span>
+        <span className="sidebar__version">ChannelAI v0.3.0</span>
       </div>
     </>
   )

@@ -1,13 +1,21 @@
 import { useRef, useState } from 'react'
 import {
+  Bell,
+  BellRing,
   Captions,
+  Clock,
   Database,
   Download,
+  ExternalLink,
   FolderOpen,
   HardDrive,
   Info,
+  KeyRound,
+  LogOut,
   Palette,
+  Plus,
   Save,
+  Share2,
   Trash2,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
@@ -20,17 +28,39 @@ import {
   Field,
   Modal,
   PageHeader,
+  RelTime,
   Segmented,
   Toggle,
+  cx,
 } from '../components/ui'
 import { formatBytes } from '../lib/format'
 
 export default function SettingsPage() {
-  const { state, setPrefs, exportData, importData, resetData, toast } = useApp()
+  const {
+    state,
+    setPrefs,
+    exportData,
+    importData,
+    resetData,
+    toast,
+    connectYouTube,
+    disconnectYouTube,
+    addRule,
+    removeRule,
+    toggleRule,
+  } = useApp()
   const prefs = state.prefs
   const importInputRef = useRef<HTMLInputElement>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const [lastImport, setLastImport] = useState<string | null>(null)
+  const [clientId, setClientId] = useState('')
+  const [ytBusy, setYtBusy] = useState(false)
+  const [ruleName, setRuleName] = useState('')
+  const [ruleTime, setRuleTime] = useState('09:00')
+  const [ruleError, setRuleError] = useState<string | null>(null)
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(
+    typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+  )
 
   const runExport = () => {
     const blob = new Blob([exportData()], { type: 'application/json' })
@@ -56,13 +86,27 @@ export default function SettingsPage() {
     }
   }
 
+  const requestPermission = async () => {
+    if (typeof Notification === 'undefined') {
+      toast('error', 'Notifications unsupported', 'This browser cannot show Notification pop-ups.')
+      return
+    }
+    const permission = await Notification.requestPermission()
+    setNotifPermission(permission)
+    if (permission === 'granted') {
+      toast('success', 'Reminders allowed', 'Posting rules will ping you at their set time.')
+    } else {
+      toast('info', 'Reminders stay in-app', 'You will still see a toast, but no system banner.')
+    }
+  }
+
   const storageChars = JSON.stringify(state).length
 
   return (
     <div className="page">
       <PageHeader
         title="Settings"
-        description="Interface preferences and local data management. Preferences persist in localStorage — no accounts."
+        description="Appearance, real YouTube publishing with your own OAuth client, reminders and rules, and local data management."
       />
 
       <div className="settings-grid">
@@ -92,6 +136,215 @@ export default function SettingsPage() {
             label="Reduce motion"
             hint="Minimize animations and transitions."
           />
+        </Card>
+
+        <Card
+          title="YouTube publishing (real)"
+          subtitle="Your account. Your free OAuth client. No secrets in this app."
+          icon={<Share2 size={17} aria-hidden="true" />}
+        >
+          {state.ytChannel ? (
+            <div className="yt-connect">
+              <p className="yt-chip yt-chip--connected">
+                <Share2 size={16} aria-hidden="true" />
+                <span>
+                  Connected to <strong>{state.ytChannel.title}</strong>
+                  <small className="muted"> · {state.ytChannel.customUrl}</small>
+                </span>
+              </p>
+              <Button onClick={disconnectYouTube}>
+                <LogOut size={15} aria-hidden="true" />
+                Disconnect (token is discarded)
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Field
+                label="Google OAuth Client ID"
+                htmlFor="yt-client"
+                hint="Ends in .apps.googleusercontent.com — created by you (free) at Google Cloud Console. This is not a secret; the app stores it locally only."
+              >
+                <input
+                  id="yt-client"
+                  className="input"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder="1234567890-abc123.apps.googleusercontent.com"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+              <div className="data-actions">
+                <Button
+                  variant="primary"
+                  disabled={ytBusy || clientId.trim() === ''}
+                  onClick={() => {
+                    setYtBusy(true)
+                    void connectYouTube(clientId).finally(() => setYtBusy(false))
+                  }}
+                >
+                  <KeyRound size={15} aria-hidden="true" />
+                  {ytBusy ? 'Waiting for Google…' : 'Connect YouTube'}
+                </Button>
+                <a
+                  className="btn btn--ghost btn--sm"
+                  href="https://console.cloud.google.com/apis/credentials"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink size={14} aria-hidden="true" />
+                  Open Cloud Console
+                </a>
+              </div>
+              <details className="how-to">
+                <summary>Step-by-step: create your OAuth client (free, ~2 minutes)</summary>
+                <ol>
+                  <li>
+                    At <strong>console.cloud.google.com</strong>, create/select a project → <em>APIs &amp; Services</em> →
+                    enable the <strong>YouTube Data API v3</strong>.
+                  </li>
+                  <li>
+                    <em>Credentials</em> → <em>Create credentials</em> → <strong>OAuth client ID</strong> →
+                    Application type <strong>Web application</strong>.
+                  </li>
+                  <li>
+                    Under <strong>Authorized JavaScript origins</strong> add BOTH (exact, no trailing path):
+                    <code>https://tatheer583.github.io</code>
+                    <code>http://localhost:5173</code>
+                  </li>
+                  <li>
+                    Under <strong>Authorized redirect URIs</strong> add <code>https://developers.google.com/</code>
+                    (harmless default used by some flows).
+                  </li>
+                  <li>Optional: configure the consent screen as “Testing” with your account as a test user.</li>
+                  <li>Copy the Client ID and paste it above. Google never shares your token with this file.</li>
+                </ol>
+              </details>
+              <DemoNote>
+                The access token lives in this tab's memory only (~1 hour). Origin mismatch ⇒ `origin_mismatch` —
+                re-check step 3 exactly.
+              </DemoNote>
+            </>
+          )}
+        </Card>
+
+        <Card
+          title={`Posting rules (${state.rules.length})`}
+          subtitle="Local reminders now; the actual timing is enforced by YouTube's publishAt"
+          icon={<Clock size={17} aria-hidden="true" />}
+        >
+          <form
+            className="rule-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              setRuleError(null)
+              const result = addRule(ruleName, ruleTime)
+              if (!result.ok) {
+                setRuleError(result.error)
+                return
+              }
+              setRuleName('')
+              toast('success', 'Rule added', `${ruleName.trim()} rings daily at ${ruleTime}.`)
+            }}
+          >
+            <div className="rule-form__fields">
+              <Field label="Rule name" htmlFor="rule-name" required>
+                <input
+                  id="rule-name"
+                  className="input"
+                  value={ruleName}
+                  onChange={(e) => setRuleName(e.target.value)}
+                  placeholder="Daily morning reel"
+                  autoComplete="off"
+                />
+              </Field>
+              <Field label="Daily at (HH:MM)" htmlFor="rule-time" required>
+                <input
+                  id="rule-time"
+                  className="input"
+                  type="time"
+                  value={ruleTime}
+                  onChange={(e) => setRuleTime(e.target.value)}
+                />
+              </Field>
+              <Button variant="primary" type="submit">
+                <Plus size={15} aria-hidden="true" />
+                Add rule
+              </Button>
+            </div>
+            {ruleError && (
+              <p className="field__msg" role="alert">
+                {ruleError}
+              </p>
+            )}
+          </form>
+          {state.rules.length === 0 ? (
+            <p className="muted">
+              No rules yet. Example: “Morning reel” at 09:00 and “Evening reel” at 18:30 to post two a day.
+            </p>
+          ) : (
+            <ul className="rule-list">
+              {state.rules.map((rule) => (
+                <li key={rule.id} className="rule-row">
+                  <div className="rule-row__main">
+                    <span className="rule-row__time num">{rule.time}</span>
+                    <span className="rule-row__name">{rule.name}</span>
+                    <span className="rule-row__meta muted">
+                      {rule.lastFiredAt ? (
+                        <>
+                          last ring <RelTime at={rule.lastFiredAt} />
+                        </>
+                      ) : (
+                        'not fired yet'
+                      )}
+                    </span>
+                  </div>
+                  <div className="rule-row__side">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={rule.enabled}
+                      aria-label={`Toggle ${rule.name}`}
+                      className={cx('toggle toggle--sm', rule.enabled && 'is-on')}
+                      onClick={() => toggleRule(rule.id, !rule.enabled)}
+                    >
+                      <span className="toggle__knob" aria-hidden="true" />
+                    </button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="btn--danger-ghost"
+                      aria-label={`Delete ${rule.name}`}
+                      onClick={() => {
+                        removeRule(rule.id)
+                        toast('info', 'Rule removed', `${rule.name} will not ring anymore.`)
+                      }}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="reminders-row">
+            <Toggle
+              checked={prefs.reminders}
+              onChange={(on) => setPrefs({ reminders: on }, on ? 'Reminders enabled' : 'Reminders disabled')}
+              label="Enable in-app reminder engine"
+              hint="Rules ring while this tab is open. Actual go-live: set publishAt in Publish dialog."
+            />
+            <Button onClick={() => void requestPermission()}>
+              <Bell size={15} aria-hidden="true" />
+              {notifPermission === 'granted' ? 'System notifications: on' : 'Allow system notifications'}
+            </Button>
+            {notifPermission === 'granted' && (
+              <Badge tone="ok">
+                <BellRing size={12} aria-hidden="true" /> granted
+              </Badge>
+            )}
+            {notifPermission === 'denied' && <Badge tone="warn">blocked by browser</Badge>}
+          </div>
         </Card>
 
         <Card title="Defaults" icon={<Captions size={17} aria-hidden="true" />}>
@@ -165,7 +418,7 @@ export default function SettingsPage() {
               Last import: <strong>{lastImport}</strong>
             </p>
           )}
-          <DemoNote>Exports contain only the demo workspace (no media files, no secrets).</DemoNote>
+          <DemoNote>Exports contain only the workspace data (no media files, no secrets).</DemoNote>
         </Card>
 
         <Card title="About ChannelAI" icon={<Info size={17} aria-hidden="true" />}>
@@ -173,23 +426,22 @@ export default function SettingsPage() {
             <li>
               <Save size={15} aria-hidden="true" />
               <span>
-                <strong>Version v0.1.0</strong> — React + Vite · hash-routed · relative build paths for
+                <strong>Version v0.2.0</strong> — MIT open-source · React + Vite · relative build paths for
                 repository-based GitHub Pages.
               </span>
             </li>
             <li>
               <HardDrive size={15} aria-hidden="true" />
               <span>
-                <strong>Local-first:</strong> every number, queue row and schedule lives in this browser.
-                Clearing site data wipes it — export first if you care.
+                <strong>Real features:</strong> in-browser clip rendering/export, thumbnail capture, SRT/VTT
+                captions, scheduled YouTube publishing (your OAuth client), browser reminders.
               </span>
             </li>
             <li>
-              <Badge tone="muted">No backend</Badge>
+              <Badge tone="muted">Simulated</Badge>
               <span>
-                <strong>Simulated:</strong> processing statuses and analytics are generated locally with fixed
-                timers. No downloads, renders, caption AI or publishing happen in v0.1 — those require real
-                integrations.
+                <strong>Simulation only:</strong> the processing queue animation and demo analytics. YouTube
+                downloading and social “auto-play” of third-party content are not part of any version.
               </span>
             </li>
           </ul>
