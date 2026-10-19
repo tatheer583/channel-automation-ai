@@ -65,6 +65,12 @@ app = FastAPI(title="ChannelAI Local Service", version=SERVICE_VERSION)
 # The frontend is served from a different origin (GitHub Pages or the Vite dev
 # server), so the browser sends a cross-origin request. Allowed origins can be
 # narrowed with CHANNELAI_ALLOWED_ORIGINS (comma separated) if desired.
+#
+# allow_private_network is REQUIRED for the deployed (https://) GitHub Pages
+# app: Chrome's Private Network Access rule blocks a public page from
+# reaching http://127.0.0.1 unless the server opts in explicitly. Without
+# this line the browser reports:
+#   "Permission was denied for this request to access the `loopback` address space."
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -73,9 +79,10 @@ app.add_middleware(
         if o.strip()
     ] or ["*"],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS", "DELETE"],
     allow_headers=["*"],
     expose_headers=["X-ChannelAI-Token"],
+    allow_private_network=True,
 )
 
 

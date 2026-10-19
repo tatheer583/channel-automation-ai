@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { ACCENTS, ASPECTS } from '../lib/options'
-import { fetchHealth, type BackendHealth } from '../lib/backend'
+import { fetchHealth, BackendError, type BackendHealth } from '../lib/backend'
 import {
   Badge,
   Button,
@@ -513,6 +513,7 @@ function LocalServiceCard() {
   const [checking, setChecking] = useState(false)
   const [health, setHealth] = useState<BackendHealth | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [advice, setAdvice] = useState<string | null>(null)
 
   const save = () => {
     const cleanUrl = url.trim() || 'http://127.0.0.1:8000'
@@ -538,6 +539,7 @@ function LocalServiceCard() {
       toast('success', 'Service reachable', `${result.service} v${result.version} is running.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reach the local service.')
+      setAdvice(err instanceof BackendError ? (err.advice ?? null) : null)
       toast('error', 'Service not reachable', 'Start it with the command shown below.')
     } finally {
       setChecking(false)
@@ -645,9 +647,12 @@ function LocalServiceCard() {
       )}
 
       {error && (
-        <p className="field__hint" role="alert">
-          {error}
-        </p>
+        <>
+          <p className="field__hint" role="alert">
+            {error}
+          </p>
+          {advice && <p className="muted">{advice}</p>}
+        </>
       )}
 
       <details className="how-to">

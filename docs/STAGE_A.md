@@ -66,6 +66,18 @@ Successfully installed fastapi-0.149.0 faster-whisper-1.2.1 uvicorn-0.54.0 ...
 
 ## 4. Starting the service
 
+### The easy way (recommended)
+
+```powershell
+cd C:\Users\1\Projects\ChannelAI
+.\start-app.ps1
+```
+
+That starts the AI service, starts the frontend, waits until the service
+answers its health check, and opens <http://localhost:5173> in your browser.
+
+### The manual way
+
 ```powershell
 cd C:\Users\1\Projects\ChannelAI
 .\backend\start.ps1
@@ -90,6 +102,48 @@ npm run dev
 ```
 
 Open <http://localhost:5173>.
+
+### Stopping it
+
+```powershell
+.\backend\stop.ps1
+```
+
+---
+
+## 4b. Important: use the app at `localhost`, not the GitHub Pages URL
+
+This is a browser security rule, not a bug in ChannelAI.
+
+**Chrome's Local Network Access rule** stops a *public* `https://` page (the
+GitHub Pages build) from reaching `http://127.0.0.1` on your machine. The
+browser console says:
+
+```
+Access to fetch at 'http://127.0.0.1:8000/api/health' from origin
+'https://tatheer583.github.io' has been blocked by CORS policy:
+Permission was denied for this request to access the `loopback` address space.
+```
+
+This was measured on Chrome 155 against the live Pages site. The service does
+send the correct `Access-Control-Allow-Private-Network: true` header, but
+Chrome 155 no longer treats that as sufficient — it uses a permission prompt
+instead (`navigator.permissions.query({name: 'local-network'})` reports the
+state as `prompt`).
+
+| Where you open the app | Result |
+| --- | --- |
+| <http://localhost:5173> (local dev server) | ✅ Works. A local page may always reach loopback. |
+| A private/LAN address (e.g. `http://192.168.1.5:5173`) | ✅ Works. Private → local is allowed. |
+| `file://` build | ✅ Works (local origin), but ES modules are blocked by the browser — use the dev server instead. |
+| <https://tatheer583.github.io/...> (deployed, **public** origin) | ⚠️ Blocked until you allow "local network access" for that site in Chrome's prompt. |
+
+Measured on Chrome 155: `localhost` ✅, `192.168.1.5` ✅, `github.io` ❌.
+
+**So: run the app locally (step 4).** The deployed Pages build remains a
+perfectly good *frontend* — every feature except the local service works
+there, and the app tells you plainly when the service is unreachable instead
+of pretending.
 
 ---
 
@@ -147,6 +201,7 @@ Disk added so far: **520 MB**.
 | `uvicorn: command not found` | venv not activated | Use the full path: `.\backend\.venv\Scripts\python.exe -m uvicorn app:app --app-dir backend --port 8000` |
 | PowerShell blocks `start.ps1` | Execution policy | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that window |
 | CORS error in the browser console | Service on a different port | Set the address in Settings to match the port you started it on |
+| "blocked ... access to the `loopback` address space" | You opened the **deployed** Pages site | Open <http://localhost:5173> instead (run `npm run dev`) — see section 4b |
 
 ---
 
@@ -188,9 +243,10 @@ Disk added so far: **520 MB**.
 
 | Path | What it is |
 | --- | --- |
+| `start-app.ps1` | One-click launcher (service + frontend + browser) |
 | `backend/app.py` | The HTTP service (routes, jobs, CORS, token guard) |
 | `backend/pipeline.py` | Audio decoding + Whisper + caption splitting |
-| `backend/start.ps1` | One-line launcher |
+| `backend/start.ps1` / `backend/stop.ps1` | Start / stop the service |
 | `backend/requirements.txt` | Pinned Python dependencies |
 | `src/lib/backend.ts` | Browser-side client for the service |
 | `src/pages/Settings.tsx` | The "Local AI service" card |

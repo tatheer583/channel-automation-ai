@@ -82,12 +82,16 @@ export interface TranscribeOptions {
 
 /** A failure with a message that is safe to show in the UI. */
 export class BackendError extends Error {
-  readonly hint?: string
+  /** Machine-readable kind: 'offline' | 'token' | undefined. */
+  readonly kind?: string
+  /** Optional actionable advice shown under the message. */
+  readonly advice?: string
 
-  constructor(message: string, hint?: string) {
+  constructor(message: string, kind?: string, advice?: string) {
     super(message)
     this.name = 'BackendError'
-    this.hint = hint
+    this.kind = kind
+    this.advice = advice
   }
 }
 
@@ -103,13 +107,37 @@ function headers(config: BackendConfig): Record<string, string> {
 
 /** True when the failure means "the service is not running". */
 export function isOfflineError(error: unknown): boolean {
-  return error instanceof BackendError && error.hint === 'offline'
+  return error instanceof BackendError && error.kind === 'offline'
 }
 
+const LOOPBACK = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i
+
+/**
+ * The service is unreachable. There are two very different reasons and the
+ * user needs to know which one it is:
+ *
+ *  1. The service is not running  -> start it.
+ *  2. The browser blocked it       -> Chrome's Local Network Access rule
+ *     stops a *public* https:// page (the GitHub Pages build) from reaching
+ *     http://127.0.0.1 until the site is allowed to use the local network.
+ */
 function offlineMessage(config: BackendConfig): BackendError {
+  const pageIsLocal = typeof window !== 'undefined' && LOOPBACK.test(window.location.origin)
+  const serviceIsLocal = LOOPBACK.test(baseUrl(config))
+
+  if (!pageIsLocal && serviceIsLocal) {
+    return new BackendError(
+      `The local AI service is not reachable at ${baseUrl(config)}.`,
+      'offline',
+      'Your browser blocked local-network access. Either open the app at http://localhost:5173 ' +
+        '(run `npm run dev` in the project folder), or allow this site to access your local ' +
+        'network when the browser asks.',
+    )
+  }
   return new BackendError(
     `The local AI service is not reachable at ${baseUrl(config)}.`,
     'offline',
+    'Start it with: cd C:\\Users\\1\\Projects\\ChannelAI  then  .\\backend\\start.ps1',
   )
 }
 

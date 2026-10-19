@@ -610,9 +610,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           })
           return { ok: true, error: null }
         } catch (error) {
-          const message =
+          const base =
             error instanceof Error ? error.message : 'Transcription failed for an unknown reason.'
-          return { ok: false, error: message }
+          const advice =
+            error instanceof backend.BackendError && error.advice ? ` ${error.advice}` : ''
+          return { ok: false, error: `${base}${advice}` }
         }
       },
       addClip: (input) => {
