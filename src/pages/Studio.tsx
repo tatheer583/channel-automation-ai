@@ -33,7 +33,7 @@ import {
   StatusBadge,
   cx,
 } from '../components/ui'
-import { dateKey, formatBytes, formatClock } from '../lib/format'
+import { dateKey, formatBytes, formatClock, uid } from '../lib/format'
 import { substitute, templateVars } from '../lib/templates'
 import type { AspectId, CaptionLine, ClipJob, TextTemplate } from '../types'
 
@@ -614,7 +614,7 @@ function ClipEditorModal({
   onClose: () => void
   onPublish: (clipId: string) => void
 }) {
-  const { state, addCaptionLine, updateCaptionLine, removeCaptionLine, exportCaptions } = useApp()
+  const { state, addCaptionLine, updateCaptionLine, removeCaptionLine, exportCaptions, setCaptionLines } = useApp()
   const [nStart, setNStart] = useState('')
   const [nEnd, setNEnd] = useState('')
   const [nText, setNText] = useState('')
@@ -666,6 +666,31 @@ function ClipEditorModal({
     setNText('')
   }
 
+  /**
+   * Copy the real transcript of the source video into this clip, keeping only
+   * the lines that fall inside the clip range and re-basing the timings to
+   * the clip's first frame (the format the SRT/VTT export expects).
+   */
+  const applyTranscript = () => {
+    setError(null)
+    const transcript = video?.transcript
+    if (!transcript) return
+    const clipLength = clip.end - clip.start
+    const lines: CaptionLine[] = transcript.captions
+      .filter((caption) => caption.end > clip.start && caption.start < clip.end)
+      .map((caption) => {
+        const start = Math.max(0, Number((caption.start - clip.start).toFixed(2)))
+        const end = Math.min(clipLength, Number((Math.min(caption.end, clip.end) - clip.start).toFixed(2)))
+        return { id: uid(), start, end, text: caption.text }
+      })
+      .filter((line) => line.end > line.start)
+    if (lines.length === 0) {
+      setError('This clip range contains no speech from the transcript.')
+      return
+    }
+    setCaptionLines(clip.id, lines)
+  }
+
   return (
     <Modal
       open
@@ -689,6 +714,18 @@ function ClipEditorModal({
 
       <div className="editor-block">
         <h3 className="editor-block__title">Caption lines</h3>
+        {video?.transcript && (
+          <div className="card__actions-inline" style={{ marginBottom: '0.75rem' }}>
+            <Button size="sm" variant="secondary" onClick={applyTranscript}>
+              <Wand2 size={14} aria-hidden="true" />
+              Apply video transcript
+            </Button>
+            <small className="muted">
+              {video.transcript.captions.length} lines from the {video.transcript.model} model
+              {video.transcript.language ? ` · detected "${video.transcript.language}"` : ''}
+            </small>
+          </div>
+        )}
         {lines.length === 0 ? (
           <p className="muted">
             No caption lines yet. Add timings (in seconds from the clip's first frame) and text — they export

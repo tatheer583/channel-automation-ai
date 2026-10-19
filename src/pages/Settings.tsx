@@ -4,6 +4,7 @@ import {
   BellRing,
   Captions,
   Clock,
+  Cpu,
   Database,
   Download,
   ExternalLink,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { ACCENTS, ASPECTS } from '../lib/options'
+import { fetchHealth, type BackendHealth } from '../lib/backend'
 import {
   Badge,
   Button,
@@ -137,6 +139,8 @@ export default function SettingsPage() {
             hint="Minimize animations and transitions."
           />
         </Card>
+
+        <LocalServiceCard />
 
         <Card
           title="YouTube publishing (real)"
@@ -476,5 +480,198 @@ export default function SettingsPage() {
         </p>
       </Modal>
     </div>
+  )
+}
+
+// --------------------------------------------------- local AI service card ---
+
+const WHISPER_MODELS = [
+  { id: 'tiny', label: 'tiny', hint: 'fastest, least accurate (~75 MB)' },
+  { id: 'base', label: 'base', hint: 'balanced, good for Urdu + English (~145 MB)' },
+  { id: 'small', label: 'small', hint: 'most accurate, slow on 4 cores (~480 MB)' },
+]
+
+const LANGUAGES = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'ur', label: 'Urdu' },
+  { value: 'en', label: 'English' },
+]
+
+/**
+ * Connection panel for the local FastAPI service that runs Whisper on this
+ * machine. Everything here is real: the status line reports what the service
+ * actually answered, never a guess.
+ */
+function LocalServiceCard() {
+  const { state, setPrefs, toast } = useApp()
+  const prefs = state.prefs
+  const [url, setUrl] = useState(prefs.backendUrl)
+  const [token, setToken] = useState(prefs.backendToken)
+  const [model, setModel] = useState(prefs.whisperModel)
+  const [language, setLanguage] = useState(prefs.transcribeLanguage)
+  const [checking, setChecking] = useState(false)
+  const [health, setHealth] = useState<BackendHealth | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = () => {
+    const cleanUrl = url.trim() || 'http://127.0.0.1:8000'
+    setPrefs(
+      {
+        backendUrl: cleanUrl,
+        backendToken: token.trim(),
+        whisperModel: model,
+        transcribeLanguage: language,
+      },
+      'Local AI service settings saved',
+    )
+    toast('success', 'Saved', 'Local AI service settings updated.')
+  }
+
+  const test = async () => {
+    setChecking(true)
+    setError(null)
+    setHealth(null)
+    try {
+      const result = await fetchHealth({ url: url.trim(), token: token.trim() || undefined })
+      setHealth(result)
+      toast('success', 'Service reachable', `${result.service} v${result.version} is running.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reach the local service.')
+      toast('error', 'Service not reachable', 'Start it with the command shown below.')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <Card
+      title="Local AI service (real transcription)"
+      subtitle="Speech-to-text on your own CPU — no cloud, no credits"
+      icon={<Cpu size={17} aria-hidden="true" />}
+    >
+      <Field
+        label="Service address"
+        htmlFor="backend-url"
+        hint="The local FastAPI app from the backend/ folder. It runs on this computer only."
+      >
+        <input
+          id="backend-url"
+          className="input"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="http://127.0.0.1:8000"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </Field>
+
+      <Field
+        label="Local token (optional)"
+        htmlFor="backend-token"
+        hint="Only needed if you started the service with CHANNELAI_TOKEN set."
+      >
+        <input
+          id="backend-token"
+          className="input"
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder="(not set)"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </Field>
+
+      <Field label="Whisper model" hint="Downloaded once, then cached for offline use.">
+        <select
+          className="input input--select"
+          aria-label="Whisper model size"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+        >
+          {WHISPER_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label} — {m.hint}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Spoken language" hint="Auto works for mixed Urdu + English, but pinning a language is steadier.">
+        <Segmented
+          ariaLabel="Transcription language"
+          options={LANGUAGES}
+          value={language}
+          onChange={setLanguage}
+        />
+      </Field>
+
+      <div className="data-actions">
+        <Button onClick={save}>
+          <Save size={15} aria-hidden="true" />
+          Save settings
+        </Button>
+        <Button variant="primary" disabled={checking} onClick={() => void test()}>
+          <Database size={15} aria-hidden="true" />
+          {checking ? 'Checking…' : 'Test connection'}
+        </Button>
+      </div>
+
+      {health && (
+        <ul className="about-list">
+          <li>
+            <Cpu size={15} aria-hidden="true" />
+            <span>
+              <strong>{health.service} v{health.version}</strong> — {health.device} / {health.compute_type} · FFmpeg{' '}
+              {health.ffmpeg}
+            </span>
+          </li>
+          <li>
+            <Database size={15} aria-hidden="true" />
+            <span>
+              Model <strong>{health.default_model}</strong>{' '}
+              {health.model_cached?.[health.default_model] ? 'is cached (offline ready)' : 'is not downloaded yet'}
+              {health.model_loaded ? ' · currently loaded in RAM' : ''}
+            </span>
+          </li>
+          <li>
+            <FolderOpen size={15} aria-hidden="true" />
+            <span>
+              Temp files: <code>{health.work_dir}</code> · max upload {health.max_upload_mb} MB
+            </span>
+          </li>
+        </ul>
+      )}
+
+      {error && (
+        <p className="field__hint" role="alert">
+          {error}
+        </p>
+      )}
+
+      <details className="how-to">
+        <summary>How to start the local service (Windows)</summary>
+        <ol>
+          <li>
+            Open PowerShell in the project folder: <code>cd C:\Users\1\Projects\ChannelAI</code>
+          </li>
+          <li>
+            Activate it: <code>.\backend\.venv\Scripts\Activate.ps1</code>
+          </li>
+          <li>
+            Run it: <code>python -m uvicorn app:app --app-dir backend --port 8000</code>
+          </li>
+          <li>
+            Keep that window open while you transcribe. Closing it stops the service (the app then says the
+            service is offline instead of pretending to work).
+          </li>
+        </ol>
+      </details>
+
+      <DemoNote>
+        This service runs on your machine only. It never uploads your media anywhere, and nothing you
+        transcribe is sent to Google or any third party.
+      </DemoNote>
+    </Card>
   )
 }

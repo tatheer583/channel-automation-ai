@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, CirclePlay, Clock, Film, FolderOpen, ImageDown, Trash2, Upload } from 'lucide-react'
+import { AudioLines, Camera, CirclePlay, Clock, Film, FolderOpen, ImageDown, Trash2, Upload } from 'lucide-react'
 import { useApp } from '../store/AppStore'
-import { Badge, Button, Card, DemoNote, EmptyState, Modal, PageHeader } from '../components/ui'
+import { Badge, Button, Card, DemoNote, EmptyState, Modal, PageHeader, Progress } from '../components/ui'
 import { formatBytes, formatClock, relativeTime } from '../lib/format'
-import { getAttachedUrl } from '../lib/videoStore'
+import { getAttachedFile, getAttachedUrl } from '../lib/videoStore'
 import type { VideoAsset } from '../types'
 
 type HoverState = boolean
@@ -21,6 +21,7 @@ export default function LibraryPage() {
   const [dragging, setDragging] = useState<HoverState>(false)
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [transcribeId, setTranscribeId] = useState<string | null>(null)
 
   const handleFiles = async (files: FileList | null) => {
     const file = files?.[0]
@@ -58,6 +59,7 @@ export default function LibraryPage() {
 
   const previewing = state.videos.find((v) => v.id === previewId) ?? null
   const previewUrl = previewing ? getAttachedUrl(previewing.id) : null
+  const transcribing = state.videos.find((v) => v.id === transcribeId) ?? null
 
   return (
     <div className="page">
@@ -180,6 +182,9 @@ export default function LibraryPage() {
                       <span className="video-card__chips">
                         {video.sample && <Badge tone="warn">Sample metadata</Badge>}
                         {attached ? <Badge tone="ok">File attached</Badge> : <Badge tone="muted">Not attached</Badge>}
+                        {video.transcript && (
+                          <Badge tone="ok">{video.transcript.captions.length} caption lines</Badge>
+                        )}
                       </span>
                       <span className="video-card__meta">
                         {formatBytes(video.size)} · {video.type} · added {relativeTime(video.addedAt)}
@@ -194,6 +199,12 @@ export default function LibraryPage() {
                         {attached && (
                           <Button size="sm" onClick={() => setPreviewId(video.id)}>
                             Preview
+                          </Button>
+                        )}
+                        {attached && (
+                          <Button size="sm" onClick={() => setTranscribeId(video.id)}>
+                            <AudioLines size={14} aria-hidden="true" />
+                            {video.transcript ? 'Re-transcribe' : 'Transcribe'}
                           </Button>
                         )}
                         <Button
@@ -292,6 +303,129 @@ export default function LibraryPage() {
           ))}
       </Modal>
 
+      {transcribing && (
+        <TranscribeModal
+          video={transcribing}
+          onClose={() => {
+            setTranscribeId(null)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+// ------------------------------------------------------ transcription modal ---
+
+type TranscribePhase = 'uploading' | 'processing' | 'done' | 'error'
+
+/**
+ * Runs a real transcription through the local AI service and shows honest
+ * progress: the upload percentage first, then the service's own stage names.
+ * Failures are displayed as-is - nothing is faked or smoothed over.
+ */
+function TranscribeModal({ video, onClose }: { video: VideoAsset; onClose: () => void }) {
+  const { transcribeVideo, toast } = useApp()
+  const [phase, setPhase] = useState<TranscribePhase>('uploading')
+  const [progress, setProgress] = useState(0)
+  const [stage, setStage] = useState('Starting')
+  const [error, setError] = useState<string | null>(null)
+
+  // The context value is rebuilt on every state change, so keep the latest
+  // function in a ref instead of using it as an effect dependency.
+  const runRef = useRef(transcribeVideo)
+  useEffect(() => {
+    runRef.current = transcribeVideo
+  }, [transcribeVideo])
+
+  const videoName = video.name
+
+  useEffect(() => {
+    let cancelled = false
+    const file = getAttachedFile(video.id)
+    if (!file) {
+      setPhase('error')
+      setError(
+        'This file is no longer attached in this session. Attach it again from the library, then transcribe.',
+      )
+      return
+    }
+
+    setPhase('uploading')
+    setStage('Uploading to the local service')
+
+    void runRef
+      .current(video.id, file, {
+        onUpload: (fraction) => {
+          if (cancelled) return
+          setPhase('uploading')
+          setProgress(Math.round(fraction * 100))
+          setStage('Uploading to the local service')
+        },
+        onProgress: (fraction, label) => {
+          if (cancelled) return
+          setPhase('processing')
+          setProgress(Math.max(3, Math.round(fraction * 100)))
+          setStage(label)
+        },
+      })
+      .then((result) => {
+        if (cancelled) return
+        if (result.ok) {
+          setPhase('done')
+          setProgress(100)
+          setStage('Done')
+          toast('success', 'Transcript ready', `${videoName} was transcribed on your own CPU.`)
+        } else {
+          setPhase('error')
+          setError(result.error ?? 'Transcription failed.')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [video.id, videoName, toast])
+
+  return (
+    <Modal
+      open
+      title="Transcribing with the local AI service"
+      onClose={onClose}
+      footer={
+        <div className="modal-actions">
+          <Button onClick={onClose}>{phase === 'done' ? 'Close' : 'Hide'}</Button>
+        </div>
+      }
+    >
+      <p className="muted">{video.name}</p>
+
+      {phase !== 'error' && (
+        <>
+          <Progress value={progress} label={stage} />
+          <p className="muted" style={{ marginTop: '0.6rem' }}>
+            {stage} — {progress}%
+          </p>
+        </>
+      )}
+
+      {phase === 'error' && (
+        <p role="alert" style={{ color: 'var(--danger, #f87171)' }}>
+          {error}
+        </p>
+      )}
+
+      {phase === 'done' && (
+        <p>
+          The transcript is stored on this video. Open <strong>Clip Studio</strong> to copy its lines into a clip
+          and export SRT / VTT.
+        </p>
+      )}
+
+      <DemoNote>
+        Speech recognition runs on your own CPU through the local service (backend/app.py). The first run
+        downloads the Whisper model once; after that it works offline.
+      </DemoNote>
+    </Modal>
   )
 }
