@@ -36,6 +36,7 @@ import type {
   ToastKind,
   TrackStat,
   VideoAsset,
+  VideoTranscript,
   AspectId,
   AutoPostRule,
   YtChannelInfo,
@@ -46,6 +47,7 @@ import { attachVideo, getAttachedUrl, isSupportedVideoType, probeDuration, relea
 import { captureFrameBlob, captureFrameDataUrl, renderClip } from '../lib/recorder'
 import { buildSrt, buildVtt, downloadBlob, downloadText } from '../lib/fileExport'
 import * as yt from '../lib/youtube'
+import * as backend from '../lib/backend'
 
 const MAX_TOASTS = 4
 const TOAST_LIFETIME_MS = 4200
@@ -66,6 +68,7 @@ type Action =
       event?: ActivityEvent
     }
   | { type: 'video-remove'; id: string; event?: ActivityEvent }
+  | { type: 'video-transcript'; id: string; transcript: VideoTranscript; event?: ActivityEvent }
   | { type: 'clip-add'; clip: ClipJob; event?: ActivityEvent }
   | { type: 'clip-remove'; id: string; event?: ActivityEvent }
   | { type: 'clips-clear-done'; event?: ActivityEvent }
@@ -124,6 +127,13 @@ function reducer(state: AppState, action: Action): AppState {
         stats: state.stats.filter((s) => !droppedIds.has(s.clipId)),
       })
     }
+    case 'video-transcript':
+      return log({
+        ...state,
+        videos: state.videos.map((v) =>
+          v.id === action.id ? { ...v, transcript: action.transcript } : v,
+        ),
+      })
     case 'clip-add':
       return log({ ...state, clips: [...state.clips, action.clip] })
     case 'clip-remove': {
@@ -308,6 +318,18 @@ interface AppContextValue {
   addVideoFile: (file: File) => Promise<AddVideoResult>
   attachFileToVideo: (videoId: string, file: File) => Promise<AddVideoResult>
   removeVideo: (id: string) => void
+  /**
+   * Send a local file to the local AI service and store the real transcript
+   * on the video. Reports honest upload + processing progress.
+   */
+  transcribeVideo: (
+    videoId: string,
+    file: File,
+    callbacks?: {
+      onUpload?: (fraction: number) => void
+      onProgress?: (fraction: number, stage: string) => void
+    },
+  ) => Promise<{ ok: boolean; error: string | null }>
   addClip: (input: AddClipInput) => ClipCreatorResult
   removeClip: (id: string) => void
   clearDoneClips: () => void
@@ -318,6 +340,8 @@ interface AppContextValue {
   setPrefs: (patch: Partial<Prefs>, message?: string) => void
   setTemplates: (templates: TextTemplate[], message?: string) => void
   addCaptionLine: (clipId: string, line: Omit<CaptionLine, 'id'>) => void
+  /** Replace every caption line on a clip (used when applying a transcript). */
+  setCaptionLines: (clipId: string, lines: CaptionLine[]) => void
   updateCaptionLine: (clipId: string, lineId: string, patch: Partial<Omit<CaptionLine, 'id'>>) => void
   removeCaptionLine: (clipId: string, lineId: string) => void
   exportCaptions: (clipId: string, format: 'srt' | 'vtt') => void
@@ -552,6 +576,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: true, error: null, videoId }
       },
       removeVideo,
+      transcribeVideo: async (videoId, file, callbacks) => {
+        const prefs = stateRef.current.prefs
+        const config = { url: prefs.backendUrl, token: prefs.backendToken }
+        try {
+          const result = await backend.transcribe(
+            config,
+            file,
+            { model: prefs.whisperModel, language: prefs.transcribeLanguage },
+            { onUpload: callbacks?.onUpload, onProgress: callbacks?.onProgress },
+          )
+          const transcript: VideoTranscript = {
+            captions: result.captions.map((c) => ({
+              id: c.id,
+              start: c.start,
+              end: c.end,
+              text: c.text,
+            })),
+            language: result.language,
+            duration: result.duration,
+            model: result.model,
+            elapsed: result.elapsed,
+            transcribedAt: Date.now(),
+          }
+          dispatch({
+            type: 'video-transcript',
+            id: videoId,
+            transcript,
+            event: makeEvent(
+              'captions',
+              `Transcribed "${file.name}" — ${transcript.captions.length} caption lines in ${transcript.elapsed.toFixed(1)}s`,
+            ),
+          })
+          return { ok: true, error: null }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : 'Transcription failed for an unknown reason.'
+          return { ok: false, error: message }
+        }
+      },
       addClip: (input) => {
         const video = stateRef.current.videos.find((v) => v.id === input.videoId)
         if (!video) return { ok: false, error: 'Pick a video from the library first.', clipId: null }
@@ -625,6 +688,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       setTemplates: (templates, message) => {
         dispatch({ type: 'templates-set', templates, event: message ? makeEvent('captions', message) : undefined })
+      },
+      setCaptionLines: (clipId, lines) => {
+        const clip = stateRef.current.clips.find((c) => c.id === clipId)
+        if (!clip) return
+        dispatch({
+          type: 'clip-captions',
+          id: clipId,
+          lines,
+          event: makeEvent('captions', `Replaced caption lines on "${clip.title}"`),
+        })
       },
       addCaptionLine: (clipId, line) => {
         const clip = stateRef.current.clips.find((c) => c.id === clipId)

@@ -10,6 +10,7 @@ import type {
   ActivityEvent,
   AppState,
   AutoPostRule,
+  CaptionLine,
   CaptionStyle,
   Channel,
   ClipJob,
@@ -19,6 +20,7 @@ import type {
   TextTemplate,
   TrackStat,
   VideoAsset,
+  VideoTranscript,
   YtChannelInfo,
 } from '../types'
 import { dateKey, uid } from './format'
@@ -49,6 +51,10 @@ export const DEFAULT_PREFS: Prefs = {
   motionReduced: false,
   defaultAspect: '9:16',
   reminders: false,
+  backendUrl: 'http://127.0.0.1:8000',
+  backendToken: '',
+  whisperModel: 'base',
+  transcribeLanguage: 'auto',
 }
 
 const MINUTE = 60_000
@@ -195,6 +201,40 @@ function asObject(input: unknown): Record<string, unknown> {
     : {}
 }
 
+/** Cap on stored caption lines so one long video cannot fill localStorage. */
+const MAX_TRANSCRIPT_CAPTIONS = 3000
+
+/** Rebuild a stored transcript from untrusted JSON, or drop it. */
+function sanitizeTranscript(input: unknown): VideoTranscript | undefined {
+  if (input == null || typeof input !== 'object') return undefined
+  const raw = input as Partial<VideoTranscript>
+  const captions = asArray(raw.captions)
+    .filter(
+      (c): c is CaptionLine =>
+        c != null &&
+        typeof c === 'object' &&
+        typeof (c as CaptionLine).start === 'number' &&
+        typeof (c as CaptionLine).end === 'number' &&
+        typeof (c as CaptionLine).text === 'string',
+    )
+    .slice(0, MAX_TRANSCRIPT_CAPTIONS)
+    .map((c, index) => ({
+      id: typeof c.id === 'string' ? c.id : `c${index}`,
+      start: c.start,
+      end: c.end,
+      text: c.text.slice(0, 300),
+    }))
+  if (captions.length === 0) return undefined
+  return {
+    captions,
+    language: typeof raw.language === 'string' ? raw.language : null,
+    duration: typeof raw.duration === 'number' ? raw.duration : 0,
+    model: typeof raw.model === 'string' ? raw.model : 'unknown',
+    elapsed: typeof raw.elapsed === 'number' ? raw.elapsed : 0,
+    transcribedAt: typeof raw.transcribedAt === 'number' ? raw.transcribedAt : Date.now(),
+  }
+}
+
 /** Coerce arbitrary parsed JSON into a safe AppState (defaults fill gaps). */
 export function sanitizeState(input: unknown): AppState | null {
   if (input == null || typeof input !== 'object') return null
@@ -208,6 +248,11 @@ export function sanitizeState(input: unknown): AppState | null {
     (v): v is VideoAsset =>
       v != null && typeof v === 'object' && typeof (v as VideoAsset).id === 'string' && typeof (v as VideoAsset).name === 'string',
   )
+  // Re-validate stored transcripts so a bad blob can never break the app.
+  const cleanVideos = videos.map((v) => {
+    const transcript = sanitizeTranscript((v as Partial<VideoAsset>).transcript)
+    return transcript ? { ...v, transcript } : { ...v, transcript: undefined }
+  })
   const clips = asArray(raw.clips).filter((c): c is ClipJob => {
     if (c == null || typeof c !== 'object') return false
     const job = c as Partial<ClipJob>
@@ -252,6 +297,10 @@ export function sanitizeState(input: unknown): AppState | null {
     motionReduced: typeof prefsRaw.motionReduced === 'boolean' ? prefsRaw.motionReduced : DEFAULT_PREFS.motionReduced,
     defaultAspect: typeof prefsRaw.defaultAspect === 'string' ? (prefsRaw.defaultAspect as Prefs['defaultAspect']) : DEFAULT_PREFS.defaultAspect,
     reminders: typeof prefsRaw.reminders === 'boolean' ? prefsRaw.reminders : DEFAULT_PREFS.reminders,
+    backendUrl: typeof prefsRaw.backendUrl === 'string' && prefsRaw.backendUrl.trim() ? prefsRaw.backendUrl.trim() : DEFAULT_PREFS.backendUrl,
+    backendToken: typeof prefsRaw.backendToken === 'string' ? prefsRaw.backendToken : DEFAULT_PREFS.backendToken,
+    whisperModel: typeof prefsRaw.whisperModel === 'string' && prefsRaw.whisperModel.trim() ? prefsRaw.whisperModel.trim() : DEFAULT_PREFS.whisperModel,
+    transcribeLanguage: typeof prefsRaw.transcribeLanguage === 'string' && prefsRaw.transcribeLanguage.trim() ? prefsRaw.transcribeLanguage.trim() : DEFAULT_PREFS.transcribeLanguage,
   }
   const textTemplates = asArray(raw.textTemplates).filter(
     (t): t is TextTemplate =>
@@ -293,7 +342,7 @@ export function sanitizeState(input: unknown): AppState | null {
   )
   return {
     channels: channels.length > 0 ? channels : seed.channels,
-    videos: videos.length > 0 ? videos : seed.videos,
+    videos: cleanVideos.length > 0 ? cleanVideos : seed.videos,
     clips: cleanClips.length > 0 ? cleanClips : seed.clips,
     schedule: cleanSchedule.length > 0 ? cleanSchedule : seed.schedule,
     captions,

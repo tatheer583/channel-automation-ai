@@ -27,6 +27,27 @@ export interface VideoAsset {
   addedAt: number
   /** Small JPEG dataURL captured from the local file (persisted, ~10–30 KB). */
   thumb?: string
+  /** Real speech-to-text result produced by the local AI service. */
+  transcript?: VideoTranscript
+}
+
+/**
+ * A real transcript produced by the local Whisper service. `captions` are
+ * already split into subtitle-sized lines with timings, ready for the
+ * existing SRT/VTT export path.
+ */
+export interface VideoTranscript {
+  captions: CaptionLine[]
+  /** Detected language code, or null when it could not be determined. */
+  language: string | null
+  /** Length of the decoded audio in seconds. */
+  duration: number
+  /** Which Whisper model produced it. */
+  model: string
+  /** Wall-clock seconds the transcription took. */
+  elapsed: number
+  /** epoch ms when the transcript was created. */
+  transcribedAt: number
 }
 
 export interface CaptionLine {
@@ -100,6 +121,14 @@ export interface Prefs {
   motionReduced: boolean
   defaultAspect: AspectId
   reminders: boolean
+  /** Base URL of the local AI service (FastAPI) running on this machine. */
+  backendUrl: string
+  /** Optional token for the local service. Only needed if CHANNELAI_TOKEN is set. */
+  backendToken: string
+  /** Whisper model size used for transcription (tiny / base / small / ...). */
+  whisperModel: string
+  /** Language hint for Whisper: 'auto', 'ur', 'en', ... */
+  transcribeLanguage: string
 }
 
 /**

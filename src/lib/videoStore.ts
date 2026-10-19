@@ -2,20 +2,31 @@
  * Registry for in-memory object URLs of locally attached video files.
  * Object URLs cannot live in localStorage, so only metadata is persisted —
  * the binary file reference is re-attached (per session) from the Video Library.
+ *
+ * The original `File` handle is kept alongside the URL so features that need
+ * the real bytes (sending a file to the local AI service) can get them
+ * without asking the user to pick the file twice.
  */
 
 const urls = new Map<string, string>()
+const files = new Map<string, File>()
 
 /** (Re)attach a local file for a video id; releases any previous URL. */
 export function attachVideo(videoId: string, file: File): string {
   releaseVideo(videoId)
   const url = URL.createObjectURL(file)
   urls.set(videoId, url)
+  files.set(videoId, file)
   return url
 }
 
 export function getAttachedUrl(videoId: string): string | null {
   return urls.get(videoId) ?? null
+}
+
+/** The original File for an attached video, when it is still in this session. */
+export function getAttachedFile(videoId: string): File | null {
+  return files.get(videoId) ?? null
 }
 
 export function releaseVideo(videoId: string): void {
@@ -24,6 +35,7 @@ export function releaseVideo(videoId: string): void {
     URL.revokeObjectURL(url)
     urls.delete(videoId)
   }
+  files.delete(videoId)
 }
 
 /** Release every registered object URL (used on import/reset). */
